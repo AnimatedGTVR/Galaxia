@@ -23,6 +23,29 @@ use smithay::{
 
 use crate::render::GxElement;
 
+/// Galaxia's own wallpaper, used when the theme doesn't set one.
+/// Looked up in the install location first, then in the source tree (for dev builds).
+pub fn default_wallpaper() -> Option<PathBuf> {
+    const NAME: &str = "cosmic-cliffs.jpg";
+    let mut candidates = Vec::new();
+    if let Some(d) = std::env::var_os("GALAXIA_DATA_DIR") {
+        candidates.push(PathBuf::from(d).join("wallpapers").join(NAME));
+    }
+    candidates.push(PathBuf::from("/usr/local/share/galaxia/wallpapers").join(NAME));
+    candidates.push(PathBuf::from("/usr/share/galaxia/wallpapers").join(NAME));
+    candidates.push(PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/wallpapers")).join(NAME));
+    candidates.into_iter().find(|p| p.exists())
+}
+
+/// What to show: the theme's wallpaper, `none` for the space backdrop, or Galaxia's default.
+fn wanted_wallpaper(theme: &galaxia_theme::Theme) -> Option<PathBuf> {
+    match theme.wallpaper.as_deref().map(str::trim) {
+        Some("none") | Some("") => None,
+        Some(_) => theme.wallpaper_path(),
+        None => default_wallpaper(),
+    }
+}
+
 const SPACE_FRAG: &str = r#"
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
@@ -135,7 +158,7 @@ impl Background {
         self.poll();
 
         // Wallpaper wanted: make sure the right one (path + size) is loaded or loading.
-        let wanted = theme.wallpaper_path();
+        let wanted = wanted_wallpaper(theme);
         match &wanted {
             Some(path) => {
                 let have = self.image.as_ref().map(|l| (&l.path, l.size)) == Some((path, size));

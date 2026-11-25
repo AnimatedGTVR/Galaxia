@@ -36,9 +36,10 @@ pub struct Theme {
     pub accent: Color,
     /// Border of windows without focus.
     pub border_inactive: Color,
-    /// Base color of the built-in space background (used when no wallpaper is set).
+    /// Base color of the built-in space background (used with `wallpaper = "none"`).
     pub background: Color,
-    /// Wallpaper image (png, jpeg or webp). `~` is expanded. Unset = built-in space background.
+    /// Wallpaper image (png, jpeg or webp). `~` is expanded.
+    /// Unset = Galaxia's default wallpaper; "none" = the built-in space background.
     pub wallpaper: Option<String>,
     /// Window shadow color; alpha sets strength.
     pub shadow: Color,

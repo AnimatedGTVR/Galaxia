@@ -48,7 +48,9 @@ Dialogs float on their own. Apps are asked to drop their title bars so Galaxia d
 ## Theme
 Copy [docs/theme.example.toml](docs/theme.example.toml) to `~/.config/galaxia/theme.toml`.
 Every setting is optional: colors, corner radius, border, gaps, shadow, animation speed, and a
-`wallpaper` image. With no wallpaper, Galaxia draws its own deep-space background.
+`wallpaper` image. The default wallpaper is the James Webb Space Telescope's real photo of the
+"Cosmic Cliffs" in the Carina Nebula ([credits](assets/wallpapers/CREDITS.md)). Set
+`wallpaper = "none"` for Galaxia's built-in deep-space backdrop.
 
 ## Dev scripts
 | Script | What it does |

@@ -5,6 +5,7 @@ accent          = "#8c73ff"    # focused window border
 border_inactive = "#ffffff14"  # other windows (#rrggbbaa)
 background      = "#0a0817"    # base of the built-in space background
 # wallpaper     = "~/Pictures/wallpaper.jpg"   # png, jpeg or webp
+#                 unset = Galaxia's default (Webb "Cosmic Cliffs"), "none" = space backdrop
 shadow          = "#0000008c"
 
 corner_radius = 14
