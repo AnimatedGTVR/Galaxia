@@ -56,6 +56,24 @@ impl Workspace {
         self.focused = self.focused.min(self.columns.len().saturating_sub(1));
     }
 
+    /// The tiled window that has focus, if any.
+    pub fn focused_window(&self) -> Option<WindowId> {
+        let c = self.columns.get(self.focused)?;
+        c.windows.get(c.focused).copied()
+    }
+
+    /// Focus a tiled window by id (e.g. after a click). Returns false if floating/unknown.
+    pub fn focus_window(&mut self, id: WindowId) -> bool {
+        for (i, c) in self.columns.iter_mut().enumerate() {
+            if let Some(j) = c.windows.iter().position(|w| *w == id) {
+                c.focused = j;
+                self.focused = i;
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn focus_left(&mut self) {
         self.focused = self.focused.saturating_sub(1);
     }

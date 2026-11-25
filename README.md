@@ -15,10 +15,22 @@ A glassy Wayland desktop with scrollable tiling and floating windows.
 
 Planned later: `galaxia-greeter`, `galaxia-settings`, `galaxia-session`.
 
-## Build
+## Try it
+Galaxia runs as a window inside your current desktop:
 ```sh
-./scripts/check.sh
+./scripts/run-nested.sh            # Alt+Enter opens a terminal
+./scripts/run-nested.sh -c nautilus
 ```
+
+| Keys | Action |
+|---|---|
+| Alt+Enter | Open terminal (`GALAXIA_TERM` to choose) |
+| Alt+Left / Alt+Right (or H / L) | Move between columns |
+| Alt+R | Cycle column width (1/3, 1/2, 2/3, full) |
+| Alt+V | Float / unfloat window |
+| Alt+[ | Stack window into the left column |
+| Alt+Q | Close window |
+| Alt+Shift+E | Quit Galaxia |
 
 ## License
 GPL-3.0-or-later
