@@ -1,9 +1,12 @@
 //! Galaxia compositor: Smithay, scrollable tiling + floating, glass.
 #![allow(irrefutable_let_patterns)]
 
+mod grabs;
 mod handlers;
 mod input;
 mod layout;
+mod render;
+mod screenshot;
 mod state;
 mod winit;
 
