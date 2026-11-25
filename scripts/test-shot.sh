@@ -4,7 +4,7 @@ set -e
 cd "$(dirname "$0")/.."
 nice -n 19 cargo build -j 2 -p galaxia-comp
 OUT="$PWD/target/shots"; mkdir -p "$OUT"
-GALAXIA_SCREENSHOT_AFTER=${DELAY:-10} GALAXIA_SCREENSHOT_DIR="$OUT" RUST_LOG=info,smithay=warn NO_COLOR=1 \
+GALAXIA_SCREENSHOT_AFTER=${DELAY:-12} GALAXIA_SCREENSHOT_DIR="$OUT" RUST_LOG=info,smithay=warn NO_COLOR=1 \
   ./target/debug/galaxia-comp > "$OUT/gx.log" 2>&1 &
 PID=$!
 sleep 2
@@ -13,6 +13,6 @@ for app in "ghostty --gtk-single-instance=false" "env QT_QPA_PLATFORM=wayland qt
   WAYLAND_DISPLAY=$SOCK $app >/dev/null 2>&1 &
   sleep 2
 done
-sleep $(( ${DELAY:-10} - 4 ))
+sleep $(( ${DELAY:-12} - 4 ))
 kill $PID
 grep -E "screenshot|WARN|ERROR" "$OUT/gx.log" || true

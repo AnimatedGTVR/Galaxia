@@ -36,8 +36,10 @@ pub struct Theme {
     pub accent: Color,
     /// Border of windows without focus.
     pub border_inactive: Color,
-    /// Desktop background (until wallpapers exist).
+    /// Base color of the built-in space background (used when no wallpaper is set).
     pub background: Color,
+    /// Wallpaper image (png, jpeg or webp). `~` is expanded. Unset = built-in space background.
+    pub wallpaper: Option<String>,
     /// Window shadow color; alpha sets strength.
     pub shadow: Color,
 
@@ -61,6 +63,7 @@ impl Default for Theme {
             accent: Color([0.55, 0.45, 1.0, 1.0]),
             border_inactive: Color([1.0, 1.0, 1.0, 0.08]),
             background: Color([0.04, 0.03, 0.09, 1.0]),
+            wallpaper: None,
             shadow: Color([0.0, 0.0, 0.0, 0.55]),
             corner_radius: 14.0,
             border_width: 2.0,
@@ -82,6 +85,18 @@ pub fn config_path() -> PathBuf {
 }
 
 impl Theme {
+    /// The wallpaper path with `~` expanded.
+    pub fn wallpaper_path(&self) -> Option<PathBuf> {
+        let w = self.wallpaper.as_deref()?.trim();
+        if w.is_empty() {
+            return None;
+        }
+        match w.strip_prefix("~/") {
+            Some(rest) => std::env::var_os("HOME").map(|h| PathBuf::from(h).join(rest)),
+            None => Some(PathBuf::from(w)),
+        }
+    }
+
     /// Parse a theme from TOML text.
     pub fn from_toml(text: &str) -> Result<Theme, String> {
         toml::from_str(text).map_err(|e| e.to_string())
@@ -118,6 +133,13 @@ mod tests {
         assert_eq!(t.gap, 20.0);
         assert_eq!(t.corner_radius, Theme::default().corner_radius);
         assert_eq!(t.accent, Color::hex("#ff8800").unwrap());
+    }
+
+    #[test]
+    fn wallpaper_tilde_expands() {
+        let t = Theme::from_toml("wallpaper = \"~/Pictures/a.png\"").unwrap();
+        let p = t.wallpaper_path().unwrap();
+        assert!(p.ends_with("Pictures/a.png") && !p.starts_with("~"));
     }
 
     #[test]

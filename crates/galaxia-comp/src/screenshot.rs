@@ -9,11 +9,13 @@ use smithay::{
     backend::{
         allocator::Fourcc,
         renderer::{
-            gles::{GlesRenderer, GlesTarget},
-            ExportMem, TextureMapping,
+            damage::OutputDamageTracker,
+            element::RenderElement,
+            gles::{GlesRenderer, GlesTexture},
+            Bind, ExportMem, Offscreen, TextureMapping,
         },
     },
-    utils::{Physical, Rectangle, Size},
+    utils::{Physical, Rectangle, Size, Transform},
 };
 
 pub fn screenshot_dir() -> PathBuf {
@@ -24,15 +26,23 @@ pub fn screenshot_dir() -> PathBuf {
     home.join("Pictures").join("Galaxia")
 }
 
-/// Read back the framebuffer that was just rendered and save it as a PNG.
-pub fn save(
+/// Draw `elements` into an offscreen texture (never the on-screen surface) and save it as a PNG.
+pub fn save<E: RenderElement<GlesRenderer>>(
     renderer: &mut GlesRenderer,
-    framebuffer: &GlesTarget<'_>,
+    elements: &[E],
+    clear: [f32; 4],
     size: Size<i32, Physical>,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let region = Rectangle::from_size((size.w, size.h).into());
-    let mapping = renderer.copy_framebuffer(framebuffer, region, Fourcc::Abgr8888)?;
-    let flipped = mapping.flipped();
+    let mut texture: GlesTexture = renderer.create_buffer(Fourcc::Abgr8888, (size.w, size.h).into())?;
+    let mapping = {
+        let mut target = renderer.bind(&mut texture)?;
+        let mut damage = OutputDamageTracker::new(size, 1.0, Transform::Normal);
+        damage.render_output(renderer, &mut target, 0, elements, clear)?;
+        renderer.copy_framebuffer(&target, region, Fourcc::Abgr8888)?
+    };
+    // GL textures store rows bottom-up; flip unless the mapping already did.
+    let flipped = !mapping.flipped();
     let pixels = renderer.map_texture(&mapping)?;
 
     let (w, h) = (size.w as usize, size.h as usize);

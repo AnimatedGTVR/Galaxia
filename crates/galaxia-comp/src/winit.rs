@@ -23,6 +23,7 @@ pub fn init_winit(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopDat
 
     let shaders = Shaders::compile(backend.renderer())?;
     let mut decos = Decorations::default();
+    let mut background = crate::background::Background::new(crate::background::compile_space(backend.renderer())?);
 
     let mode = Mode { size: backend.window_size(), refresh: 60_000 };
     let output = Output::new(
@@ -35,6 +36,8 @@ pub fn init_winit(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopDat
     state.space.map_output(&output, (0, 0));
 
     let mut damage_tracker = OutputDamageTracker::from_output(&output);
+    // After startup or an offscreen render the surface isn't current, so skip the age query once.
+    let mut full_redraw = true;
     // Programs we launch connect to Galaxia, not the outer desktop.
     std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
 
@@ -49,25 +52,18 @@ pub fn init_winit(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopDat
             WinitEvent::Input(event) => state.process_input_event(event),
             WinitEvent::Redraw => {
                 state.tick();
-                let age = backend.buffer_age().unwrap_or(0);
-                let background = state.theme.background.0;
-                let backend_size = backend.window_size();
+                let age = if std::mem::take(&mut full_redraw) { 0 } else { backend.buffer_age().unwrap_or(0) };
+                let clear = state.theme.background.0;
                 let damage = {
                     let (renderer, mut framebuffer) = backend.bind().unwrap();
-                    let elements = build_elements(renderer, state, &output, &shaders, &mut decos);
-                    let damage = match damage_tracker.render_output(renderer, &mut framebuffer, age, &elements, background) {
+                    let elements = build_elements(renderer, state, &output, &shaders, &mut decos, &mut background);
+                    let damage = match damage_tracker.render_output(renderer, &mut framebuffer, age, &elements, clear) {
                         Ok(res) => res.damage.cloned(),
                         Err(e) => {
                             tracing::warn!("render failed: {e:?}");
                             None
                         }
                     };
-                    if state.take_screenshot_due() {
-                        match crate::screenshot::save(renderer, &framebuffer, backend_size) {
-                            Ok(path) => tracing::info!("screenshot saved to {}", path.display()),
-                            Err(e) => tracing::warn!("screenshot failed: {e}"),
-                        }
-                    }
                     damage
                 };
                 // Only push pixels that changed. We still swap every frame (with a
@@ -75,6 +71,17 @@ pub fn init_winit(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopDat
                 let damage = damage.filter(|d| !d.is_empty()).unwrap_or_else(|| vec![Rectangle::from_size((1, 1).into())]);
                 if let Err(e) = backend.submit(Some(&damage)) {
                     tracing::warn!("submit failed: {e:?}");
+                }
+                if state.take_screenshot_due() {
+                    // Rendered offscreen after the frame is on screen, so the real frame is untouched.
+                    let size = backend.window_size();
+                    let renderer = backend.renderer();
+                    let elements = build_elements(renderer, state, &output, &shaders, &mut decos, &mut background);
+                    full_redraw = true;
+                    match crate::screenshot::save(renderer, &elements, clear, size) {
+                        Ok(path) => tracing::info!("screenshot saved to {}", path.display()),
+                        Err(e) => tracing::warn!("screenshot failed: {e}"),
+                    }
                 }
 
                 state.space.elements().for_each(|window| {

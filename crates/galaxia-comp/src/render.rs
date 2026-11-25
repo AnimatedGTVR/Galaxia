@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use smithay::{
     backend::renderer::{
         element::{
+            memory::MemoryRenderBufferRenderElement,
             surface::WaylandSurfaceRenderElement, AsRenderElements, Element, Id, Kind, RenderElement, UnderlyingStorage,
         },
         gles::{
@@ -28,6 +29,7 @@ smithay::backend::renderer::element::render_elements! {
     Surface=WaylandSurfaceRenderElement<GlesRenderer>,
     Rounded=RoundedElement,
     Shader=PixelShaderElement,
+    Memory=MemoryRenderBufferRenderElement<GlesRenderer>,
 }
 
 const SDF: &str = r#"
@@ -317,6 +319,7 @@ pub fn build_elements(
     output: &Output,
     shaders: &Shaders,
     decos: &mut Decorations,
+    background: &mut crate::background::Background,
 ) -> Vec<GxElement> {
     decos.prune(state);
     let scale = Scale::from(output.current_scale().fractional_scale());
@@ -352,5 +355,6 @@ pub fn build_elements(
     }
 
     layer_elements(renderer, output, &[Layer::Bottom, Layer::Background], scale, &mut elements);
+    elements.extend(background.elements(renderer, &state.theme, state.theme_gen, out_rect.size));
     elements
 }

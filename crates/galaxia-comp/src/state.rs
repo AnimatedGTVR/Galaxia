@@ -287,6 +287,12 @@ impl Galaxia {
     pub fn add_window(&mut self, window: Window) {
         let id = self.next_id;
         self.next_id += 1;
+        let app_id = window
+            .toplevel()
+            .and_then(|t| smithay::wayland::compositor::with_states(t.wl_surface(), |s| {
+                s.data_map.get::<smithay::wayland::shell::xdg::XdgToplevelSurfaceData>().and_then(|d| d.lock().unwrap().app_id.clone())
+            }));
+        tracing::info!(id, ?app_id, workspace = self.active + 1, "window opened");
         self.windows.push((id, window));
         self.ws().open(id);
         self.relayout();
@@ -310,6 +316,7 @@ impl Galaxia {
 
     pub fn remove_surface(&mut self, surface: &WlSurface) {
         let Some(id) = self.id_of_surface(surface) else { return };
+        tracing::info!(id, "window closed");
         if let Some(w) = self.window(id).cloned() {
             self.space.unmap_elem(&w);
         }
