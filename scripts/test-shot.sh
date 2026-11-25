@@ -16,4 +16,5 @@ for app in "$G" "env QT_QPA_PLATFORM=wayland qt6ct" "$G"; do
 done
 sleep $(( ${DELAY:-12} - 4 ))
 kill $PID
+pkill -x galaxia-shell 2>/dev/null || true
 grep -E "screenshot|WARN|ERROR" "$OUT/gx.log" || true

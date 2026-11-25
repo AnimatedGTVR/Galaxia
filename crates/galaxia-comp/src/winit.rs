@@ -52,6 +52,7 @@ pub fn init_winit(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopDat
             WinitEvent::Input(event) => state.process_input_event(event),
             WinitEvent::Redraw => {
                 state.tick();
+                state.ipc_broadcast();
                 let age = if std::mem::take(&mut full_redraw) { 0 } else { backend.buffer_age().unwrap_or(0) };
                 let clear = state.theme.background.0;
                 let damage = {

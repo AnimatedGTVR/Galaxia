@@ -5,4 +5,9 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-galaxia-theme = { path = "../galaxia-theme" }
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+galaxia-ipc = { version = "0.0.1", path = "../galaxia-ipc" }
+galaxia-theme = { version = "0.0.1", path = "../galaxia-theme" }
+iced = { version = "0.14", default-features = false, features = ["crisp", "tiny-skia", "tokio", "wayland"] }
+iced_layershell = "0.19.1"
+tokio = { version = "1.54.1", features = ["net", "io-util", "time"] }

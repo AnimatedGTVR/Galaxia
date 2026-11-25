@@ -8,7 +8,8 @@ A glassy Wayland desktop with scrollable tiling and floating windows.
 | Folder | What it is |
 |---|---|
 | `crates/galaxia-comp` | Compositor (Smithay): scrollable tiling, floating, glass blur |
-| `crates/galaxia-shell` | Panel, launcher, control center, notifications |
+| `crates/galaxia-shell` | The panel (iced + layer-shell): workspaces, window title, clock, launcher |
+| `crates/galaxia-ipc` | JSON-lines socket protocol between compositor and shell |
 | `crates/galaxia-theme` | Shared design tokens: colors, radius, spacing, glass |
 | `docs/` | Ideas and inspiration |
 | `scripts/` | Dev scripts |
@@ -42,6 +43,10 @@ Galaxia runs as a window inside your current desktop:
 | Alt+Shift+S | Screenshot of Galaxia to `~/Pictures/Galaxia/` |
 | Alt+Shift+R | Reload theme |
 | Alt+Shift+E | Quit Galaxia |
+
+The panel (`galaxia-shell`) starts with Galaxia when it has been built
+(`cargo build -p galaxia-shell`; set `GALAXIA_SHELL=0` to skip it). It floats along the top on
+frosted glass and shows workspaces (click to switch), the focused window, a clock, and a launcher.
 
 Dialogs float on their own. Apps with a see-through background (e.g. ghostty with
 `background-opacity`) sit on frosted glass made from the blurred wallpaper.

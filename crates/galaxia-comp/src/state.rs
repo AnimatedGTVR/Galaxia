@@ -4,7 +4,7 @@ use smithay::{
     desktop::{layer_map_for_output, PopupManager, Space, Window, WindowSurfaceType},
     input::{Seat, SeatState},
     reexports::{
-        calloop::{generic::Generic, EventLoop, Interest, LoopSignal, Mode, PostAction},
+        calloop::{generic::Generic, EventLoop, Interest, LoopHandle, LoopSignal, Mode, PostAction},
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
             backend::{ClientData, ClientId, DisconnectReason},
@@ -15,6 +15,8 @@ use smithay::{
     utils::{Logical, Point, Rectangle, SERIAL_COUNTER},
     wayland::{
         compositor::{CompositorClientState, CompositorState},
+        fractional_scale::FractionalScaleManagerState,
+        viewporter::ViewporterState,
         output::OutputManagerState,
         selection::data_device::DataDeviceState,
         shell::{
@@ -36,6 +38,8 @@ pub struct Galaxia {
     pub socket_name: OsString,
     pub display_handle: DisplayHandle,
     pub loop_signal: LoopSignal,
+    pub loop_handle: LoopHandle<'static, CalloopData>,
+    pub ipc: crate::ipc::Ipc,
 
     pub space: Space<Window>,
     pub windows: Vec<(WindowId, Window)>,
@@ -66,6 +70,8 @@ pub struct Galaxia {
     pub xdg_decoration_state: XdgDecorationState,
     pub layer_shell_state: WlrLayerShellState,
     pub shm_state: ShmState,
+    pub viewporter_state: ViewporterState,
+    pub fractional_scale_state: FractionalScaleManagerState,
     pub output_manager_state: OutputManagerState,
     pub seat_state: SeatState<Galaxia>,
     pub data_device_state: DataDeviceState,
@@ -125,13 +131,15 @@ const TILED_STATES: [xdg_toplevel::State; 4] = [
 ];
 
 impl Galaxia {
-    pub fn new(event_loop: &mut EventLoop<CalloopData>, display: Display<Self>) -> Self {
+    pub fn new(event_loop: &mut EventLoop<'static, CalloopData>, display: Display<Self>) -> Self {
         let dh = display.handle();
         let compositor_state = CompositorState::new::<Self>(&dh);
         let xdg_shell_state = XdgShellState::new::<Self>(&dh);
         let xdg_decoration_state = XdgDecorationState::new::<Self>(&dh);
         let layer_shell_state = WlrLayerShellState::new::<Self>(&dh);
         let shm_state = ShmState::new::<Self>(&dh, vec![]);
+        let viewporter_state = ViewporterState::new::<Self>(&dh);
+        let fractional_scale_state = FractionalScaleManagerState::new::<Self>(&dh);
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
         let mut seat_state = SeatState::new();
         let data_device_state = DataDeviceState::new::<Self>(&dh);
@@ -147,6 +155,8 @@ impl Galaxia {
             socket_name,
             display_handle: dh,
             loop_signal: event_loop.get_signal(),
+            loop_handle: event_loop.handle(),
+            ipc: Default::default(),
             space: Space::default(),
             windows: Vec::new(),
             next_id: 1,
@@ -169,6 +179,8 @@ impl Galaxia {
             xdg_decoration_state,
             layer_shell_state,
             shm_state,
+            viewporter_state,
+            fractional_scale_state,
             output_manager_state,
             seat_state,
             data_device_state,

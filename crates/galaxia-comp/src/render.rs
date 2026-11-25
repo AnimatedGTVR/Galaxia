@@ -31,6 +31,7 @@ smithay::backend::renderer::element::render_elements! {
     Shader=PixelShaderElement,
     Memory=MemoryRenderBufferRenderElement<GlesRenderer>,
     Glass=GlassElement,
+    Shell=ShellSurfaceElement,
 }
 
 const SDF: &str = r#"
@@ -150,11 +151,31 @@ void main() {
 }
 "#;
 
+/// Like the default texture shader, but always uses the texture's alpha, even for
+/// buffers declared without one. Toolkits that draw on the CPU (iced's tiny-skia via
+/// softbuffer) send `Xrgb8888` buffers that still carry real premultiplied alpha.
+const TRUST_ALPHA_TEX_FRAG: &str = r#"
+uniform float alpha;
+varying vec2 v_coords;
+#if defined(DEBUG_FLAGS)
+uniform float tint;
+#endif
+void main() {
+    vec4 color = texture2D(tex, v_coords) * alpha;
+#if defined(DEBUG_FLAGS)
+    if (tint == 1.0)
+        color = vec4(0.0, 0.2, 0.0, 0.2) + color * 0.8;
+#endif
+    gl_FragColor = color;
+}
+"#;
+
 pub struct Shaders {
     shadow: GlesPixelProgram,
     border: GlesPixelProgram,
     rounded: GlesTexProgram,
     glass: GlesTexProgram,
+    trust_alpha: GlesTexProgram,
 }
 
 impl Shaders {
@@ -184,7 +205,8 @@ impl Shaders {
                 UniformName::new("glass_tint", UniformType::_4f),
             ],
         )?;
-        Ok(Shaders { shadow, border, rounded, glass })
+        let trust_alpha = r.compile_custom_texture_shader(format!("{tex_header}{PRECISION}{sampler}{TRUST_ALPHA_TEX_FRAG}"), &[])?;
+        Ok(Shaders { shadow, border, rounded, glass, trust_alpha })
     }
 }
 
@@ -261,6 +283,67 @@ impl RenderElement<GlesRenderer> for RoundedElement {
 
     fn underlying_storage(&self, _renderer: &mut GlesRenderer) -> Option<UnderlyingStorage<'_>> {
         None // must go through our shader, never straight to a plane
+    }
+}
+
+/// A Galaxia shell surface drawn with its real alpha (see `TRUST_ALPHA_TEX_FRAG`).
+#[derive(Debug)]
+pub struct ShellSurfaceElement {
+    inner: WaylandSurfaceRenderElement<GlesRenderer>,
+    program: GlesTexProgram,
+}
+
+impl Element for ShellSurfaceElement {
+    fn id(&self) -> &Id {
+        self.inner.id()
+    }
+    fn current_commit(&self) -> CommitCounter {
+        self.inner.current_commit()
+    }
+    fn src(&self) -> Rectangle<f64, BufferCoords> {
+        self.inner.src()
+    }
+    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        self.inner.geometry(scale)
+    }
+    fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
+        self.inner.location(scale)
+    }
+    fn transform(&self) -> Transform {
+        self.inner.transform()
+    }
+    fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
+        self.inner.damage_since(scale, commit)
+    }
+    fn opaque_regions(&self, _scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
+        // The buffer claims to be opaque, but it isn't: let the glass behind it draw.
+        OpaqueRegions::default()
+    }
+    fn alpha(&self) -> f32 {
+        self.inner.alpha()
+    }
+    fn kind(&self) -> Kind {
+        self.inner.kind()
+    }
+}
+
+impl RenderElement<GlesRenderer> for ShellSurfaceElement {
+    fn draw(
+        &self,
+        frame: &mut GlesFrame<'_, '_>,
+        src: Rectangle<f64, BufferCoords>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
+    ) -> Result<(), GlesError> {
+        frame.override_default_tex_program(self.program.clone(), Vec::new());
+        let res = self.inner.draw(frame, src, dst, damage, opaque_regions);
+        frame.clear_tex_program_override();
+        res
+    }
+
+    fn underlying_storage(&self, _renderer: &mut GlesRenderer) -> Option<UnderlyingStorage<'_>> {
+        None
     }
 }
 
@@ -479,12 +562,19 @@ fn layer_elements(
         for layer in map.layers_on(*layer_kind).rev() {
             let Some(geo) = map.layer_geometry(layer) else { continue };
             let loc = geo.loc.to_physical_precise_round(scale);
+            let ours = layer.namespace().starts_with("galaxia-");
             out.extend(
                 AsRenderElements::<GlesRenderer>::render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
                     layer, renderer, loc, scale, 1.0,
                 )
                 .into_iter()
-                .map(GxElement::Surface),
+                .map(|inner| {
+                    if ours {
+                        GxElement::Shell(ShellSurfaceElement { inner, program: shaders.trust_alpha.clone() })
+                    } else {
+                        GxElement::Surface(inner)
+                    }
+                }),
             );
             // Glass behind panels and launchers (not behind wallpaper tools).
             if let (Some(glass), true) = (glass, state.theme.glass_layers && *layer_kind != Layer::Background) {

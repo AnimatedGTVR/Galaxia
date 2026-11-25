@@ -2,8 +2,8 @@
 //! seat, data device, output.
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
-    delegate_compositor, delegate_data_device, delegate_layer_shell, delegate_output, delegate_seat, delegate_shm,
-    delegate_xdg_decoration, delegate_xdg_shell,
+    delegate_compositor, delegate_data_device, delegate_fractional_scale, delegate_layer_shell, delegate_output,
+    delegate_seat, delegate_shm, delegate_viewporter, delegate_xdg_decoration, delegate_xdg_shell,
     desktop::{
         find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output, LayerSurface as DesktopLayer, PopupKind,
         Window, WindowSurfaceType,
@@ -24,6 +24,7 @@ use smithay::{
     wayland::{
         buffer::BufferHandler,
         compositor::{get_parent, is_sync_subsurface, with_states, CompositorClientState, CompositorHandler, CompositorState},
+        fractional_scale::{with_fractional_scale, FractionalScaleHandler},
         output::OutputHandler,
         selection::{
             data_device::{set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler},
@@ -307,3 +308,15 @@ delegate_data_device!(Galaxia);
 
 impl OutputHandler for Galaxia {}
 delegate_output!(Galaxia);
+
+// ---- Viewporter + fractional scale (HiDPI support; layer-shell toolkits require them) ----
+
+delegate_viewporter!(Galaxia);
+
+impl FractionalScaleHandler for Galaxia {
+    fn new_fractional_scale(&mut self, surface: WlSurface) {
+        // One scale for now (the nested window). Per-output scales come with the real backend.
+        with_states(&surface, |states| with_fractional_scale(states, |fs| fs.set_preferred_scale(1.0)));
+    }
+}
+delegate_fractional_scale!(Galaxia);
