@@ -51,8 +51,14 @@ pub struct Theme {
     /// How far the shadow spreads out from the window.
     pub shadow_size: f32,
 
+    /// Blur radius of the frosted glass, in pixels.
     pub glass_blur: f32,
-    pub glass_opacity: f32,
+    /// Color laid over the glass; its alpha sets how strong the tint is.
+    pub glass_tint: Color,
+    /// Frosted glass behind every window (shows through apps with a see-through background).
+    pub glass_windows: bool,
+    /// Frosted glass behind panels, docks and launchers.
+    pub glass_layers: bool,
 
     /// Animation length in milliseconds. 0 turns animations off.
     pub anim_ms: u32,
@@ -71,7 +77,9 @@ impl Default for Theme {
             gap: 12.0,
             shadow_size: 28.0,
             glass_blur: 24.0,
-            glass_opacity: 0.6,
+            glass_tint: Color([0.07, 0.05, 0.14, 0.45]),
+            glass_windows: true,
+            glass_layers: true,
             anim_ms: 220,
         }
     }

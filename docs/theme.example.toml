@@ -13,7 +13,10 @@ border_width  = 2
 gap           = 12
 shadow_size   = 28
 
+# Frosted glass (blurred wallpaper behind windows and panels)
 glass_blur    = 24
-glass_opacity = 0.6
+glass_tint    = "#120d2473"   # alpha = tint strength
+glass_windows = true          # shows through apps with see-through backgrounds
+glass_layers  = true          # panels, docks, launchers
 
 anim_ms = 220   # 0 turns animations off

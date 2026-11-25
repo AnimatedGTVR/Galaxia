@@ -43,11 +43,15 @@ Galaxia runs as a window inside your current desktop:
 | Alt+Shift+R | Reload theme |
 | Alt+Shift+E | Quit Galaxia |
 
-Dialogs float on their own. Apps are asked to drop their title bars so Galaxia draws the frame.
+Dialogs float on their own. Apps with a see-through background (e.g. ghostty with
+`background-opacity`) sit on frosted glass made from the blurred wallpaper.
+
+ Apps are asked to drop their title bars so Galaxia draws the frame.
 
 ## Theme
 Copy [docs/theme.example.toml](docs/theme.example.toml) to `~/.config/galaxia/theme.toml`.
-Every setting is optional: colors, corner radius, border, gaps, shadow, animation speed, and a
+Every setting is optional: colors, corner radius, border, gaps, shadow, animation speed, frosted
+glass (blur, tint, behind windows and/or panels), and a
 `wallpaper` image. The default wallpaper is the James Webb Space Telescope's real photo of the
 "Cosmic Cliffs" in the Carina Nebula ([credits](assets/wallpapers/CREDITS.md)). Set
 `wallpaper = "none"` for Galaxia's built-in deep-space backdrop.

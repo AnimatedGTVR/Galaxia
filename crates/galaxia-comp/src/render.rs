@@ -22,7 +22,7 @@ use smithay::{
     wayland::shell::wlr_layer::Layer,
 };
 
-use crate::{layout::WindowId, Galaxia};
+use crate::{background::GlassSource, layout::WindowId, Galaxia};
 
 smithay::backend::renderer::element::render_elements! {
     pub GxElement<=GlesRenderer>;
@@ -30,6 +30,7 @@ smithay::backend::renderer::element::render_elements! {
     Rounded=RoundedElement,
     Shader=PixelShaderElement,
     Memory=MemoryRenderBufferRenderElement<GlesRenderer>,
+    Glass=GlassElement,
 }
 
 const SDF: &str = r#"
@@ -117,10 +118,43 @@ void main() {
 }
 "#;
 
+/// Frosted glass: a patch of the blurred wallpaper, tinted, grained, with rounded corners.
+const GLASS_TEX_FRAG: &str = r#"
+uniform float alpha;
+varying vec2 v_coords;
+#if defined(DEBUG_FLAGS)
+uniform float tint;
+#endif
+uniform vec4 srcn;     // the sampled region of the texture, normalized (x, y, w, h)
+uniform vec2 geo;      // size of the glass on screen (physical px)
+uniform float radius;
+uniform vec4 glass_tint;
+float hash(vec2 p) {
+    p = fract(p * vec2(443.897, 441.423));
+    p += dot(p, p.yx + 19.19);
+    return fract((p.x + p.y) * p.x);
+}
+void main() {
+    vec3 rgb = texture2D(tex, v_coords).rgb;
+    vec2 p = (v_coords - srcn.xy) / srcn.zw * geo;
+    rgb = mix(rgb, glass_tint.rgb, glass_tint.a);
+    rgb += (hash(floor(p)) - 0.5) * 0.025;   // fine grain: reads as frosted, not smeared
+    float d = rbox(p - geo * 0.5, geo * 0.5, radius);
+    float mask = 1.0 - smoothstep(-0.5, 0.5, d);
+    vec4 color = vec4(rgb, 1.0) * mask * alpha;
+#if defined(DEBUG_FLAGS)
+    if (tint == 1.0)
+        color = vec4(0.0, 0.2, 0.0, 0.2) + color * 0.8;
+#endif
+    gl_FragColor = color;
+}
+"#;
+
 pub struct Shaders {
     shadow: GlesPixelProgram,
     border: GlesPixelProgram,
     rounded: GlesTexProgram,
+    glass: GlesTexProgram,
 }
 
 impl Shaders {
@@ -139,9 +173,18 @@ impl Shaders {
         let sampler = "#if defined(EXTERNAL)\nuniform samplerExternalOES tex;\n#else\nuniform sampler2D tex;\n#endif\n";
         let rounded = r.compile_custom_texture_shader(
             format!("{tex_header}{PRECISION}{sampler}{SDF}{ROUNDED_TEX_FRAG}"),
-            &[UniformName::new("elem", UniformType::_4f), UniformName::new("geo", UniformType::_2f), radius],
+            &[UniformName::new("elem", UniformType::_4f), UniformName::new("geo", UniformType::_2f), radius.clone()],
         )?;
-        Ok(Shaders { shadow, border, rounded })
+        let glass = r.compile_custom_texture_shader(
+            format!("{tex_header}{PRECISION}{sampler}{SDF}{GLASS_TEX_FRAG}"),
+            &[
+                UniformName::new("srcn", UniformType::_4f),
+                UniformName::new("geo", UniformType::_2f),
+                radius,
+                UniformName::new("glass_tint", UniformType::_4f),
+            ],
+        )?;
+        Ok(Shaders { shadow, border, rounded, glass })
     }
 }
 
@@ -221,6 +264,125 @@ impl RenderElement<GlesRenderer> for RoundedElement {
     }
 }
 
+/// Frosted glass behind a window or panel.
+#[derive(Debug)]
+pub struct GlassElement {
+    inner: MemoryRenderBufferRenderElement<GlesRenderer>,
+    /// Own id per window/panel: every glass patch samples the same buffer,
+    /// so the buffer's id can't tell them apart for damage tracking.
+    id: Id,
+    program: GlesTexProgram,
+    buffer_size: (f64, f64),
+    radius: f32,
+    tint: [f32; 4],
+}
+
+impl Element for GlassElement {
+    fn id(&self) -> &Id {
+        &self.id
+    }
+    fn current_commit(&self) -> CommitCounter {
+        self.inner.current_commit()
+    }
+    fn src(&self) -> Rectangle<f64, BufferCoords> {
+        self.inner.src()
+    }
+    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        self.inner.geometry(scale)
+    }
+    fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
+        self.inner.location(scale)
+    }
+    fn transform(&self) -> Transform {
+        self.inner.transform()
+    }
+    fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
+        self.inner.damage_since(scale, commit)
+    }
+    fn opaque_regions(&self, _scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
+        OpaqueRegions::default()
+    }
+    fn alpha(&self) -> f32 {
+        self.inner.alpha()
+    }
+    fn kind(&self) -> Kind {
+        self.inner.kind()
+    }
+}
+
+impl RenderElement<GlesRenderer> for GlassElement {
+    fn draw(
+        &self,
+        frame: &mut GlesFrame<'_, '_>,
+        src: Rectangle<f64, BufferCoords>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
+    ) -> Result<(), GlesError> {
+        let (bw, bh) = self.buffer_size;
+        let t = self.tint;
+        let uniforms = vec![
+            Uniform::new(
+                "srcn",
+                UniformValue::_4f((src.loc.x / bw) as f32, (src.loc.y / bh) as f32, (src.size.w / bw) as f32, (src.size.h / bh) as f32),
+            ),
+            Uniform::new("geo", UniformValue::_2f(dst.size.w as f32, dst.size.h as f32)),
+            Uniform::new("radius", UniformValue::_1f(self.radius)),
+            Uniform::new("glass_tint", UniformValue::_4f(t[0], t[1], t[2], t[3])),
+        ];
+        frame.override_default_tex_program(self.program.clone(), uniforms);
+        let res = self.inner.draw(frame, src, dst, damage, opaque_regions);
+        frame.clear_tex_program_override();
+        res
+    }
+
+    fn underlying_storage(&self, _renderer: &mut GlesRenderer) -> Option<UnderlyingStorage<'_>> {
+        None
+    }
+}
+
+/// Which glass patch an id belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum GlassKey {
+    Window(WindowId),
+    Layer(u32),
+}
+
+/// Build a glass patch covering `rect` (screen logical coords), clipped to the screen.
+fn glass_element(
+    renderer: &mut GlesRenderer,
+    shaders: &Shaders,
+    glass: &GlassSource<'_>,
+    id: Id,
+    rect: Rectangle<i32, Logical>,
+    screen: Rectangle<i32, Logical>,
+    theme: &galaxia_theme::Theme,
+    scale: Scale<f64>,
+) -> Option<GxElement> {
+    let rect = rect.intersection(screen)?;
+    if rect.size.w <= 0 || rect.size.h <= 0 {
+        return None;
+    }
+    let k = glass.scale;
+    let src = Rectangle::<f64, Logical>::new(
+        ((rect.loc.x - screen.loc.x) as f64 * k, (rect.loc.y - screen.loc.y) as f64 * k).into(),
+        (rect.size.w as f64 * k, rect.size.h as f64 * k).into(),
+    );
+    let loc = rect.loc.to_f64().to_physical(scale);
+    let inner = MemoryRenderBufferRenderElement::from_buffer(renderer, loc, glass.buffer, None, Some(src), Some(rect.size), Kind::Unspecified)
+        .map_err(|e| tracing::warn!("glass upload failed: {e:?}"))
+        .ok()?;
+    let buffer_size = ((screen.size.w as f64 * k).round(), (screen.size.h as f64 * k).round());
+    Some(GxElement::Glass(GlassElement {
+        inner,
+        id,
+        program: shaders.glass.clone(),
+        buffer_size,
+        radius: theme.corner_radius * scale.x as f32,
+        tint: theme.glass_tint.0,
+    }))
+}
+
 /// Cached border + shadow per window, so unchanged frames cause no extra damage.
 struct Deco {
     border: PixelShaderElement,
@@ -231,6 +393,7 @@ struct Deco {
 #[derive(Default)]
 pub struct Decorations {
     map: HashMap<WindowId, Deco>,
+    glass_ids: HashMap<GlassKey, Id>,
     theme_gen: u64,
 }
 
@@ -287,14 +450,28 @@ impl Decorations {
             self.theme_gen = state.theme_gen;
         }
         self.map.retain(|id, _| state.window(*id).is_some());
+        self.glass_ids.retain(|k, _| match k {
+            GlassKey::Window(id) => state.window(*id).is_some(),
+            GlassKey::Layer(_) => true,
+        });
+    }
+
+    fn glass_id(&mut self, key: GlassKey) -> Id {
+        self.glass_ids.entry(key).or_insert_with(Id::new).clone()
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn layer_elements(
     renderer: &mut GlesRenderer,
     output: &Output,
     layers: &[Layer],
     scale: Scale<f64>,
+    screen: Rectangle<i32, Logical>,
+    state: &Galaxia,
+    shaders: &Shaders,
+    glass: Option<&GlassSource<'_>>,
+    decos: &mut Decorations,
     out: &mut Vec<GxElement>,
 ) {
     let map = layer_map_for_output(output);
@@ -309,6 +486,13 @@ fn layer_elements(
                 .into_iter()
                 .map(GxElement::Surface),
             );
+            // Glass behind panels and launchers (not behind wallpaper tools).
+            if let (Some(glass), true) = (glass, state.theme.glass_layers && *layer_kind != Layer::Background) {
+                use smithay::reexports::wayland_server::Resource;
+                let id = decos.glass_id(GlassKey::Layer(layer.wl_surface().id().protocol_id()));
+                let rect = Rectangle::new(geo.loc + screen.loc, geo.size);
+                out.extend(glass_element(renderer, shaders, glass, id, rect, screen, &state.theme, scale));
+            }
         }
     }
 }
@@ -328,7 +512,8 @@ pub fn build_elements(
     let radius = state.theme.corner_radius * scale.x as f32;
     let mut elements = Vec::new();
 
-    layer_elements(renderer, output, &[Layer::Overlay, Layer::Top], scale, &mut elements);
+    let glass = background.glass_source();
+    layer_elements(renderer, output, &[Layer::Overlay, Layer::Top], scale, out_rect, state, shaders, glass.as_ref(), decos, &mut elements);
 
     for window in state.space.elements().rev() {
         let Some(id) = state.id_of_window(window) else { continue };
@@ -338,8 +523,9 @@ pub fn build_elements(
             continue; // scrolled off screen
         }
         let deco = decos.get(shaders, state, id, rect, focused == Some(id));
+        let (border, shadow) = (deco.border.clone(), deco.shadow.clone());
         if state.theme.border_width > 0.0 {
-            elements.push(GxElement::Shader(deco.border.clone()));
+            elements.push(GxElement::Shader(border));
         }
         let render_loc = (loc - window.geometry().loc).to_physical_precise_round(scale);
         let geo = rect.to_physical_precise_round(scale);
@@ -349,12 +535,17 @@ pub fn build_elements(
                 .into_iter()
                 .map(|inner| GxElement::Rounded(RoundedElement { inner, program: shaders.rounded.clone(), geo, radius })),
         );
+        if let (Some(glass), true) = (glass.as_ref(), state.theme.glass_windows) {
+            let gid = decos.glass_id(GlassKey::Window(id));
+            elements.extend(glass_element(renderer, shaders, glass, gid, rect, out_rect, &state.theme, scale));
+        }
         if state.theme.shadow_size > 0.0 && state.theme.shadow.0[3] > 0.0 {
-            elements.push(GxElement::Shader(deco.shadow.clone()));
+            elements.push(GxElement::Shader(shadow));
         }
     }
 
-    layer_elements(renderer, output, &[Layer::Bottom, Layer::Background], scale, &mut elements);
+    layer_elements(renderer, output, &[Layer::Bottom, Layer::Background], scale, out_rect, state, shaders, glass.as_ref(), decos, &mut elements);
+    drop(glass);
     elements.extend(background.elements(renderer, &state.theme, state.theme_gen, out_rect.size));
     elements
 }

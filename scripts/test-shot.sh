@@ -9,7 +9,8 @@ GALAXIA_SCREENSHOT_AFTER=${DELAY:-12} GALAXIA_SCREENSHOT_DIR="$OUT" RUST_LOG=inf
 PID=$!
 sleep 2
 SOCK=$(grep -o 'socket="wayland-[0-9]*"' "$OUT/gx.log" | head -1 | cut -d'"' -f2)
-for app in "ghostty --gtk-single-instance=false" "env QT_QPA_PLATFORM=wayland qt6ct" "ghostty --gtk-single-instance=false"; do
+G="ghostty --gtk-single-instance=false --background-opacity=0.55"
+for app in "$G" "env QT_QPA_PLATFORM=wayland qt6ct" "$G"; do
   WAYLAND_DISPLAY=$SOCK $app >/dev/null 2>&1 &
   sleep 2
 done
